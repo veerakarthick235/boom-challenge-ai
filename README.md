@@ -145,6 +145,25 @@ The solution is grounded in **Grady-Kipp fragmentation theory** and **Housen-Hol
 
 ---
 
+## 📈 Model Performance Visualization
+
+### Actual vs Predicted
+![Actual vs Predicted](outputs/plots/actual_vs_predicted.png)
+
+### Feature Importance
+![Feature Importance](outputs/plots/feature_importance.png)
+
+---
+
+## ⭐ Key Highlights
+
+- Physics-informed ML using π-scaling laws
+- Stacking ensemble: XGBoost + LightGBM + PINN
+- Optuna-based hyperparameter optimization
+- Inverse design using SLSQP + CMA-ES
+- Achieves R² ≈ 0.92 (P80) and 0.87 (R95)
+
+---
 ## 🛡 Reproducibility
 
 All random seeds are fixed via:
