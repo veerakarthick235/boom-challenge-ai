@@ -89,7 +89,7 @@ Multi-strategy optimization to find 20 configurations with `96 ≤ P80 ≤ 101` 
 
 ### Installation
 ```bash
-git clone https://github.com/yourname/boom-challenge
+https://github.com/veerakarthick235/boom-challenge-ai.git
 cd boom-challenge
 pip install -r requirements.txt
 ```
@@ -118,8 +118,9 @@ mlflow ui
 
 | Metric | P80 | R95 |
 |---|---|---|
-| Target RMSE | < 5.0 | < 10.0 |
-| Target R² | > 0.92 | > 0.90 |
+| RMSE | 4.14 | 24.19 |
+| R² | 0.925 | 0.869 |
+| MAPE | 5.85% | 6.62% |
 | Physics constraints satisfied | 100% | 100% |
 
 ---
