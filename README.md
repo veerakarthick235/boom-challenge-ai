@@ -22,29 +22,30 @@ This is a dual-objective challenge: a **forward prediction problem** (impact par
 
 ## 🏗 Repository Structure
 
-```
+```text
 boom_challenge/
 ├── data/
-│   ├── train.csv
-│   └── test.csv
+│   ├── train.csv                  # Official training features
+│   ├── train_labels.csv           # Official training targets
+│   ├── test.csv                   # Official test features
+│   └── prediction_submission_template.csv
 ├── src/
-│   ├── feature_engineering.py
-│   ├── ensemble.py
-│   ├── inverse_design.py
-│   ├── visualization.py
+│   ├── feature_engineering.py     # Dimensionless π-group scaling logic
+│   ├── ensemble.py                # Stacking Regressor & OOF logic
+│   ├── inverse_design.py          # Smart Monte Carlo Optimizer (Task 2)
+│   ├── visualization.py           # Result diagnostics
 │   └── models/
-│       ├── pinn_model.py
-│       └── gbm_models.py
+│       ├── pinn_model.py          # Physics-Informed Neural Network
+│       └── gbm_models.py          # Optuna-tuned XGBoost & LightGBM
 ├── outputs/
-│   ├── task1_submission.csv
-│   ├── task2_scenarios.csv
-│   ├── models/
-│   └── eda/
-├── train.py
-├── requirements.txt
+│   ├── task1_submission.csv       # Final Forward Predictions
+│   ├── task2_scenarios.csv        # 20 Optimized Inverse Scenarios
+│   ├── models/                    # Serialized model weights
+│   └── eda/                       # Data analysis plots
+├── train.py                       # Main pipeline execution script
+├── requirements.txt               # Dependency list
+├── mlflow.db                      # Local experiment tracking database
 └── README.md
-```
-
 ---
 
 ## 🧪 Key Technical Approach
