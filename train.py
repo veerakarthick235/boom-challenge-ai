@@ -117,37 +117,46 @@ def run_eda(df: pd.DataFrame, output_dir: str):
 
 
 # ─────────────────────────────────────────────────────────────
-# FEATURE MATRIX PREPARATION
+# FEATURE MATRIX PREPARATION (🔥 ELITE UPGRADE)
 # ─────────────────────────────────────────────────────────────
 
 def prepare_features(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
-    """Run feature engineering and return train/val/test splits."""
+    """STRICT Data prep to prevent Data Leakage and Adversarial Shift."""
     TARGET_COLS = ['P80', 'R95', 'fines_frac', 'oversize_frac', 'R50_fines', 'R50_oversize']
     TARGET_LOG = [f'log_{t}' for t in TARGET_COLS]
 
-    X_all, feat_names, scaler = build_feature_matrix(
-        train_df, fit_scaler_flag=True, scaler_type='robust')
+    from src.feature_engineering import engineer_physics_features, apply_log_transforms, get_feature_columns
+    from sklearn.preprocessing import RobustScaler
+
+    # 1. Engineer independently
+    train_feat = apply_log_transforms(engineer_physics_features(train_df))
+    test_feat = apply_log_transforms(engineer_physics_features(test_df))
+
+    # 2. Force exact column alignment
+    feat_names = get_feature_columns(train_feat)
     
-    # Apply log1p to all 6 targets
-    y_all = np.log1p(train_df[TARGET_COLS].values)  
+    # Extract raw arrays
+    X_train_raw = train_feat[feat_names].values.astype(np.float32)
+    X_test_raw = test_feat[feat_names].values.astype(np.float32)
 
-    X_test, _, _ = build_feature_matrix(test_df, scaler=scaler,
-                                        fit_scaler_flag=False)
+    # Clean extreme math errors
+    X_train_raw = np.nan_to_num(X_train_raw, nan=0.0, posinf=1e6, neginf=-1e6)
+    X_test_raw = np.nan_to_num(X_test_raw, nan=0.0, posinf=1e6, neginf=-1e6)
 
-    X_tr, X_val, y_tr, y_val = train_test_split(
-        X_all, y_all, test_size=0.15, random_state=SEED)
+    # 3. STRICT ISOLATION SCALING (The AUC 1.0 Killer)
+    scaler = RobustScaler()
+    X_all = scaler.fit_transform(X_train_raw) # Fit ONLY on train
+    X_test = scaler.transform(X_test_raw)     # Transform ONLY on test
 
-    print(f"\nFeature matrix: {X_all.shape[1]} features")
-    print(f"Train: {X_tr.shape[0]} | Val: {X_val.shape[0]} | Test: {X_test.shape[0]}")
+    y_all = np.log1p(train_df[TARGET_COLS].values)
 
+    X_tr, X_val, y_tr, y_val = train_test_split(X_all, y_all, test_size=0.15, random_state=SEED)
+
+    print(f"\nFeature matrix: {X_all.shape[1]} strictly aligned features")
     return {
-        'X_all': X_all, 'y_all': y_all,
-        'X_tr': X_tr, 'y_tr': y_tr,
-        'X_val': X_val, 'y_val': y_val,
-        'X_test': X_test,
-        'feat_names': feat_names,
-        'scaler': scaler,
-        'target_log_names': TARGET_LOG
+        'X_all': X_all, 'y_all': y_all, 'X_tr': X_tr, 'y_tr': y_tr,
+        'X_val': X_val, 'y_val': y_val, 'X_test': X_test,
+        'feat_names': feat_names, 'scaler': scaler, 'target_log_names': TARGET_LOG
     }
 
 
@@ -217,7 +226,7 @@ def main(args):
             model_name='LightGBM'
         )
 
-        # PINN OOF - note: PINNTrainer has different API
+        # PINN OOF
         print("  PINN (PyTorch)...")
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         ke_idx = feat_names.index('log_KE') if 'log_KE' in feat_names else 0
@@ -250,12 +259,10 @@ def main(args):
         pinn_final.save(os.path.join(args.output_dir, 'models/pinn.pt'))
 
         # ── Stacking Ensemble ─────────────────────────────────
-        print("\n[7/8] Training stacking ensemble...")
+        print("\n[7/8] Generating elite ensemble predictions...")
         
-        # ✅ FIX 1: Removed alpha=0.5
+        # We still fit the standard ensemble so Task 2 can extract the XGB model dict
         ensemble = StackingEnsemble()
-        
-        # ✅ FIX 2: Added base_models_dict so inverse_design can run Task 2
         ensemble.fit(
             X_all, y_all,
             oof_preds_dict={'xgb': xgb_oof, 'lgbm': lgbm_oof, 'pinn': pinn_oof},
@@ -269,15 +276,19 @@ def main(args):
             'pinn': pinn_final.predict(X_test),
         }
 
-        final_log_preds = ensemble.predict(test_preds)
+        # 🔥 ELITE UPGRADE: Hardcoded Top-Tier Weighted Blend
+        print("Applying Elite Weighted Ensemble (0.6 XGB + 0.3 LGBM + 0.1 PINN)...")
+        final_log_preds = (0.60 * test_preds['xgb']) + (0.30 * test_preds['lgbm']) + (0.10 * test_preds['pinn'])
+        
         final_preds = inverse_transform_targets(final_log_preds)  # [n, 6]
 
-        # Evaluate on validation set
-        val_preds_log = ensemble.predict({
+        # Evaluate on validation set using the exact same ELITE weights
+        val_preds_dict = {
             'xgb':  xgb_final.predict(X_val),
             'lgbm': lgbm_final.predict(X_val),
             'pinn': pinn_final.predict(X_val),
-        })
+        }
+        val_preds_log = (0.60 * val_preds_dict['xgb']) + (0.30 * val_preds_dict['lgbm']) + (0.10 * val_preds_dict['pinn'])
         
         TARGET_COLS = ['P80', 'R95', 'fines_frac', 'oversize_frac', 'R50_fines', 'R50_oversize']
         val_metrics = evaluate_predictions(y_val, val_preds_log, target_names=TARGET_COLS)
@@ -320,7 +331,7 @@ def main(args):
             mlflow.log_artifact(task2_path)
 
         print("\n" + "=" * 60)
-        print("✅ Pipeline complete!")
+        print("✅ Pipeline complete! Elite configuration successfully applied.")
         print("=" * 60)
 
 
