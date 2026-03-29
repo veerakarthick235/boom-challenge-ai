@@ -217,12 +217,6 @@ torch.cuda.manual_seed_all(SEED)
 
 ---
 
-## 🧾 License
-
-This project is licensed under the MIT License.
-
----
-
 ## 🚀 Final Note
 
 Built for **Boom: Trajectory Unknown Challenge**
