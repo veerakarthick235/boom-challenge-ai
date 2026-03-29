@@ -2,65 +2,83 @@
 boom_challenge/src/feature_engineering.py
 ==========================================
 Feature Engineering updated for the Official Boom Challenge Dataset.
+Strict Feature Schema enforced to prevent Adversarial Shift (AUC 1.0 Fix).
 """
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler, RobustScaler
 import joblib
 import os
-
+from sklearn.preprocessing import StandardScaler, RobustScaler
 
 # ─────────────────────────────────────────────────────────────
-# CONSTANTS
+# CONSTANTS & STRICT SCHEMA
 # ─────────────────────────────────────────────────────────────
 SEED = 42
 
-# Only log-transform features that span massive orders of magnitude
-LOG_FEATURES = ['energy', 'strength', 'gravity', 'KE', 'energy_strength_ratio']
+# 🚨 STRICT SCHEMA: Only these raw features are allowed to exist.
+REQUIRED_INPUTS = [
+    'porosity', 'atmosphere', 'gravity', 'coupling', 
+    'strength', 'shape_factor', 'energy', 'angle_rad'
+]
 
-# All 6 official targets
+LOG_FEATURES = ['energy', 'strength', 'gravity', 'KE', 'energy_strength_ratio']
 TARGET_COLS = ['P80', 'R95', 'fines_frac', 'oversize_frac', 'R50_fines', 'R50_oversize']
+
+
+# ─────────────────────────────────────────────────────────────
+# SCHEMA ENFORCEMENT
+# ─────────────────────────────────────────────────────────────
+def align_features(df: pd.DataFrame, required_cols: list) -> pd.DataFrame:
+    """Forces exact column alignment to kill data leakage."""
+    df = df.copy()
+    
+    # 1. Drop the ID immediately so it can never leak
+    if 'id' in df.columns:
+        df = df.drop(columns=['id'])
+        
+    # 2. Add missing required columns (prevents pipeline crashes)
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = 0.0
+            
+    # 3. Return ONLY the required input features (strips out targets and ghosts)
+    return df[required_cols]
 
 
 # ─────────────────────────────────────────────────────────────
 # PHYSICS FEATURE ENGINEERING
 # ─────────────────────────────────────────────────────────────
-
 def engineer_physics_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Generate physics-informed features from raw official impact parameters.
-    New inputs: porosity, atmosphere, gravity, coupling, strength, shape_factor, energy, angle_rad
     """
-    df = df.copy()
+    # 🔥 ELITE FIX: Force strict alignment before generating features
+    df = align_features(df, REQUIRED_INPUTS)
 
-    # 1. Provide 'KE' for the PyTorch PINN Physics Loss
-    if 'energy' in df.columns:
-        df['KE'] = df['energy']  
+    # 1. Provide 'KE' for the PyTorch PINN Physics Loss & Power Features
+    df['KE'] = df['energy']  
 
-    # 2. Trigonometric angular features (removes circular discontinuity)
-    if 'angle_rad' in df.columns:
-        df['sin_angle'] = np.sin(df['angle_rad'])
-        df['cos_angle'] = np.cos(df['angle_rad'])
-        df['sin2_angle'] = np.sin(2 * df['angle_rad'])
+    # 2. Trigonometric angular features
+    df['sin_angle'] = np.sin(df['angle_rad'])
+    df['cos_angle'] = np.cos(df['angle_rad'])
+    df['sin2_angle'] = np.sin(2 * df['angle_rad'])
 
-    # 3. Interaction Features (Energy vs Material Properties)
-    if 'energy' in df.columns and 'strength' in df.columns:
-        df['energy_strength_ratio'] = df['energy'] / (df['strength'] + 1e-12)
-        
-    if 'energy' in df.columns and 'gravity' in df.columns:
-        df['gravity_energy_interaction'] = df['gravity'] * np.log1p(df['energy'])
+    # 3. Interaction Features
+    df['energy_strength_ratio'] = df['energy'] / (df['strength'] + 1e-12)
+    df['gravity_energy_interaction'] = df['gravity'] * np.log1p(df['energy'])
+    df['structural_integrity'] = df['strength'] * (1 - df['porosity'])
 
-    if 'porosity' in df.columns and 'strength' in df.columns:
-        df['structural_integrity'] = df['strength'] * (1 - df['porosity'])
+    # 4. Scale-Based Power Feature
+    df['log_energy'] = np.log1p(df['KE'])
 
+    # Note: Legacy conditional features (density_ratio, etc.) removed to prevent data shift.
     return df
 
 
 # ─────────────────────────────────────────────────────────────
 # LOG TRANSFORMATIONS
 # ─────────────────────────────────────────────────────────────
-
 def apply_log_transforms(df: pd.DataFrame, log_cols: list = None) -> pd.DataFrame:
     """Apply log1p transform to skewed physics features safely."""
     if log_cols is None:
@@ -90,7 +108,6 @@ def inverse_transform_targets(log_preds: np.ndarray) -> np.ndarray:
 # ─────────────────────────────────────────────────────────────
 # FEATURE SELECTION
 # ─────────────────────────────────────────────────────────────
-
 def get_feature_columns(df: pd.DataFrame,
                         exclude: list = None,
                         use_log: bool = True) -> list:
@@ -113,7 +130,6 @@ def get_feature_columns(df: pd.DataFrame,
 # ─────────────────────────────────────────────────────────────
 # SCALING
 # ─────────────────────────────────────────────────────────────
-
 def fit_scaler(X_train: np.ndarray, scaler_type: str = 'robust') -> object:
     if scaler_type == 'robust':
         scaler = RobustScaler()
@@ -131,9 +147,8 @@ def load_scaler(path: str):
 
 
 # ─────────────────────────────────────────────────────────────
-# FULL PIPELINE
+# FULL PIPELINE (Legacy Wrapper)
 # ─────────────────────────────────────────────────────────────
-
 def build_feature_matrix(df: pd.DataFrame,
                          scaler=None,
                          fit_scaler_flag: bool = False,
@@ -143,14 +158,12 @@ def build_feature_matrix(df: pd.DataFrame,
     df = engineer_physics_features(df)
     df = apply_log_transforms(df)
     
-    # Only transform targets if they exist in the dataframe (i.e. train set)
     if all(t in df.columns for t in TARGET_COLS):
         df = transform_targets(df)
 
     feature_cols = get_feature_columns(df, use_log=use_log)
     X = df[feature_cols].values.astype(np.float32)
 
-    # Handle NaN / Inf
     X = np.nan_to_num(X, nan=0.0, posinf=1e6, neginf=-1e6)
 
     if fit_scaler_flag:
@@ -165,7 +178,6 @@ def build_feature_matrix(df: pd.DataFrame,
 # ─────────────────────────────────────────────────────────────
 # QUICK TEST
 # ─────────────────────────────────────────────────────────────
-
 if __name__ == '__main__':
     np.random.seed(SEED)
     n = 200
@@ -180,13 +192,9 @@ if __name__ == '__main__':
         'angle_rad': np.random.uniform(0.1, 1.5, n),
         'P80': np.random.uniform(80, 120, n),
         'R95': np.random.uniform(50, 250, n),
-        'fines_frac': np.random.uniform(0, 1, n),
-        'oversize_frac': np.random.uniform(0, 1, n),
-        'R50_fines': np.random.uniform(10, 50, n),
-        'R50_oversize': np.random.uniform(100, 300, n),
     })
 
     X, feat_names, sc = build_feature_matrix(df_test, fit_scaler_flag=True)
     print(f"Feature matrix shape: {X.shape}")
     print(f"Number of features:   {len(feat_names)}")
-    print(f"Feature names: {feat_names[:10]} ...")
+    print(f"Feature names: {feat_names[:5]} ...")
