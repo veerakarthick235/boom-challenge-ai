@@ -11,11 +11,12 @@
 
 ## 🌌 Problem Overview
 
-An asteroid strikes the surface of a planet in the **Mox-95 stellar system**. Our goal is to predict:
+An asteroid strikes the surface of a planet in the **Mox-95 stellar system**. Our goal is to predict six critical debris characteristics, primarily focusing on:
 - **P80** — 80th percentile fragment size from the impact debris field
 - **R95** — radius containing 95% of all ejecta
+- *Additional Targets:* `fines_frac`, `oversize_frac`, `R50_fines`, `R50_oversize`
 
-This is both a **forward prediction problem** (impact params → debris outcomes) and an **inverse design problem** (find configurations that satisfy debris constraints).
+This is a dual-objective challenge: a **forward prediction problem** (impact params → debris outcomes) and an **inverse design problem** (finding optimal configurations that strictly satisfy P80 and R95 bounds).
 
 ---
 
@@ -24,25 +25,23 @@ This is both a **forward prediction problem** (impact params → debris outcomes
 ```
 boom_challenge/
 ├── data/
-│   ├── train.csv                  # Training dataset
-│   └── test.csv                   # Test dataset
+│   ├── train.csv
+│   └── test.csv
 ├── src/
-│   ├── feature_engineering.py     # Physics-based feature generation
-│   ├── ensemble.py                # Stacking ensemble + adversarial validation
-│   ├── inverse_design.py          # Task 2: constraint optimization
-│   ├── visualization.py           # Plotting utilities
+│   ├── feature_engineering.py
+│   ├── ensemble.py
+│   ├── inverse_design.py
+│   ├── visualization.py
 │   └── models/
-│       ├── pinn_model.py          # PyTorch Physics-Informed Neural Network
-│       └── gbm_models.py          # XGBoost + LightGBM with Optuna HPO
+│       ├── pinn_model.py
+│       └── gbm_models.py
 ├── outputs/
-│   ├── task1_submission.csv       # Forward prediction results
-│   ├── task2_scenarios.csv        # 20 inverse design scenarios
-│   ├── models/                    # Saved model artifacts
-│   └── eda/                       # Visualization outputs
-├── notebooks/
-│   └── eda_and_analysis.ipynb    # Exploratory analysis notebook
-├── train.py                       # Main training pipeline
-├── requirements.txt               # Python dependencies
+│   ├── task1_submission.csv
+│   ├── task2_scenarios.csv
+│   ├── models/
+│   └── eda/
+├── train.py
+├── requirements.txt
 └── README.md
 ```
 
@@ -51,7 +50,6 @@ boom_challenge/
 ## 🧪 Key Technical Approach
 
 ### Physics-Informed Feature Engineering
-We derive dimensionless **Buckingham π groups** from the Housen-Holsapple impact scaling laws:
 
 | Feature | Formula | Physical Meaning |
 |---|---|---|
@@ -61,127 +59,64 @@ We derive dimensionless **Buckingham π groups** from the Housen-Holsapple impac
 | `E_spec` | KE / (ρ_t × d³) | Specific impact energy |
 
 ### Model Stack
+
 ```
 ┌─ XGBoost  ─┐ ┌─ LightGBM ─┐ ┌─ PyTorch PINN ─┐
 │ Optuna HPO │ │ Optuna HPO │ │ Physics Loss   │
 └────────────┘ └────────────┘ └────────────────┘
          \              |              /
           ┌─────────────────────────┐
-          │  Ridge Meta-Learner     │  ← trained on OOF
+          │  Ridge Meta-Learner     │
           │  (Stacking Ensemble)    │
           └─────────────────────────┘
 ```
 
-### Physics-Informed Neural Network (PINN)
-The PINN enforces **monotonicity constraints** via automatic differentiation:
-- dP80/d(log_KE) ≤ 0 — higher energy → finer fragments
-- dR95/d(log_KE) ≥ 0 — higher energy → wider scatter
-
 ### Inverse Design (Task 2)
-Multi-strategy optimization to find 20 configurations with `96 ≤ P80 ≤ 101` and `R95 ≤ 175`:
-1. **SLSQP** — gradient-based constrained optimization (500 multi-starts)
-2. **CMA-ES** — evolutionary global search
-3. **K-Means** — diverse solution selection from all feasible candidates
+
+Smart Monte Carlo Simulator:
+1. Generates 500,000 random impact scenarios
+2. Evaluates using tuned XGBoost ensemble
+3. Selects optimal configurations via nearest-neighbor filtering
 
 ---
 
 ## 🚀 Quick Start
 
-### Installation
 ```bash
-https://github.com/veerakarthick235/boom-challenge-ai.git
-cd boom-challenge
+git clone https://github.com/veerakarthick235/boom-challenge-ai.git
+cd boom-challenge-ai
 pip install -r requirements.txt
 ```
 
-### Training (Task 1)
 ```bash
-# Basic training
-python train.py --data_dir data/ --output_dir outputs/
-
-# With Optuna hyperparameter optimization
-python train.py --data_dir data/ --output_dir outputs/ --run_hpo
-
-# Full pipeline including Task 2
 python train.py --data_dir data/ --output_dir outputs/ --run_hpo --run_task2
 ```
 
-### View experiment tracking
-```bash
-mlflow ui
-# Navigate to http://localhost:5000
-```
-
 ---
 
-## 📊 Expected Performance
+## 📊 Performance Metrics
 
-| Metric | P80 | R95 |
-|---|---|---|
-| RMSE | 4.14 | 24.19 |
-| R² | 0.925 | 0.869 |
-| MAPE | 5.85% | 6.62% |
-| Physics constraints satisfied | 100% | 100% |
-
----
-
-## 🔬 Physics Background
-
-The solution is grounded in **Grady-Kipp fragmentation theory** and **Housen-Holsapple π-scaling**:
-
-- Fragment size distributions follow power laws governed by strain-rate and material strength
-- Ejecta radii scale with impact energy via: `R95 ∝ KE^γ × g^δ × Y^ε`
-- Training in log-space naturally captures these power-law relationships
-
----
-
-## 📁 Output Files
-
-| File | Description |
-|---|---|
-| `outputs/task1_submission.csv` | Task 1: P80 and R95 for all test samples |
-| `outputs/task2_scenarios.csv` | Task 2: 20 feasible impact configurations |
-| `outputs/models/` | Saved XGBoost, LightGBM, PINN checkpoint |
-| `outputs/eda/` | EDA plots, SHAP summaries, residual diagnostics |
-
----
-
-## 📈 Model Performance Visualization
-
-### Actual vs Predicted
-![Actual vs Predicted](outputs/plots/actual_vs_predicted.png)
-
-### Feature Importance
-![Feature Importance](outputs/plots/feature_importance.png)
+| Target | R² Score | MAE | MAPE |
+|---|---|---|---|
+| **P80** | **0.975** | 7.93 | 4.60% |
+| **R95** | **0.920** | 39.60 | 17.15% |
+| **Oversize Frac** | **0.990** | 0.026 | 21.36% |
 
 ---
 
 ## ⭐ Key Highlights
 
-- Physics-informed ML using π-scaling laws
-- Stacking ensemble: XGBoost + LightGBM + PINN
-- Optuna-based hyperparameter optimization
-- Inverse design using SLSQP + CMA-ES
-- Achieves R² ≈ 0.92 (P80) and 0.87 (R95)
+- Physics-informed ML pipeline
+- Stacking ensemble with PINN + GBMs
+- MLflow experiment tracking
+- Monte Carlo inverse design engine
 
 ---
+
 ## 🛡 Reproducibility
 
-All random seeds are fixed via:
 ```python
 SEED = 42
 random.seed(SEED); np.random.seed(SEED)
 torch.manual_seed(SEED); torch.cuda.manual_seed_all(SEED)
 ```
-
----
-
-## 📚 References
-
-1. Housen, K.R. & Holsapple, K.A. (2011). *Ejecta from impact craters*. Icarus.
-2. Grady, D.E. & Kipp, M.E. (1980). *Continuum modelling of explosive fracture*. Int. J. Rock Mech.
-3. Raissi, M. et al. (2019). *Physics-informed neural networks*. J. Comput. Physics.
-
----
-
-*Built for the Boom: Trajectory Unknown Challenge — Mox-95 Impact Physics Track*
