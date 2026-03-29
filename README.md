@@ -59,6 +59,8 @@ boom_challenge/
 | `mu_crater` | (KE/Y)^(1/3) × (ρ_i/ρ_t)^(1/3) | Cratering efficiency |
 | `E_spec` | KE / (ρ_t × d³) | Specific impact energy |
 
+---
+
 ### Model Stack
 
 ```
