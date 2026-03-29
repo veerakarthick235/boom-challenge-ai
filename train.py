@@ -1,6 +1,4 @@
 """
-boom_challenge/train.py
-========================
 Main training pipeline for the Boom: Trajectory Unknown Challenge.
 
 Orchestrates:
@@ -57,17 +55,31 @@ def set_seed(seed: int):
 # ─────────────────────────────────────────────────────────────
 
 def load_data(data_dir: str) -> tuple:
-    """Load train and test CSV files."""
-    train_path = os.path.join(data_dir, 'train.csv')
+    """Load train, train_labels, and test CSV files."""
+    train_features_path = os.path.join(data_dir, 'train.csv')
+    train_labels_path = os.path.join(data_dir, 'train_labels.csv')
     test_path  = os.path.join(data_dir, 'test.csv')
 
-    train_df = pd.read_csv(train_path)
+    train_features = pd.read_csv(train_features_path)
+    train_labels = pd.read_csv(train_labels_path)
     test_df  = pd.read_csv(test_path)
+
+    # 🛠️ THE FIX: Check if 'id' exists in the labels file.
+    if 'id' in train_labels.columns:
+        train_df = pd.merge(train_features, train_labels, on='id')
+    else:
+        # If no 'id' column, just glue them side-by-side (row 1 matches row 1)
+        train_df = pd.concat([train_features, train_labels], axis=1)
+
+    # Safety net: Ensure test_df has an 'id' column for the final submission file
+    if 'id' not in test_df.columns:
+        test_df['id'] = range(len(test_df))
 
     print(f"Training data:  {train_df.shape}")
     print(f"Test data:      {test_df.shape}")
-    print(f"\nColumns: {list(train_df.columns)}")
-    print(f"\nTarget stats:\n{train_df[['P80','R95']].describe()}")
+    
+    target_cols = ['P80', 'R95', 'fines_frac', 'oversize_frac', 'R50_fines', 'R50_oversize']
+    print(f"\nTarget stats:\n{train_df[target_cols].describe()}")
 
     return train_df, test_df
 
@@ -109,14 +121,15 @@ def run_eda(df: pd.DataFrame, output_dir: str):
 # ─────────────────────────────────────────────────────────────
 
 def prepare_features(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
-    """
-    Run feature engineering and return train/val/test splits.
-    """
-    TARGET_LOG = ['log_P80', 'log_R95']
+    """Run feature engineering and return train/val/test splits."""
+    TARGET_COLS = ['P80', 'R95', 'fines_frac', 'oversize_frac', 'R50_fines', 'R50_oversize']
+    TARGET_LOG = [f'log_{t}' for t in TARGET_COLS]
 
     X_all, feat_names, scaler = build_feature_matrix(
         train_df, fit_scaler_flag=True, scaler_type='robust')
-    y_all = np.log1p(train_df[['P80', 'R95']].values)  # log-space targets
+    
+    # Apply log1p to all 6 targets
+    y_all = np.log1p(train_df[TARGET_COLS].values)  
 
     X_test, _, _ = build_feature_matrix(test_df, scaler=scaler,
                                         fit_scaler_flag=False)
@@ -134,6 +147,7 @@ def prepare_features(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
         'X_test': X_test,
         'feat_names': feat_names,
         'scaler': scaler,
+        'target_log_names': TARGET_LOG
     }
 
 
@@ -144,6 +158,7 @@ def prepare_features(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
 def main(args):
     set_seed(SEED)
     os.makedirs(args.output_dir, exist_ok=True)
+    mlflow.set_tracking_uri("sqlite:///mlflow.db")
     mlflow.set_experiment("boom-trajectory-unknown")
 
     with mlflow.start_run(run_name=f"full_pipeline_v{args.version}"):
@@ -165,6 +180,7 @@ def main(args):
         X_test       = data['X_test']
         scaler       = data['scaler']
         feat_names   = data['feat_names']
+        target_log_names = data['target_log_names']
 
         # Adversarial validation
         adv = adversarial_validation(X_all, X_test, feat_names)
@@ -188,7 +204,7 @@ def main(args):
         xgb_oof = generate_oof_predictions(
             XGBModel, {'params': best_xgb_params},
             X_all, y_all,
-            fit_kwargs={'target_cols': ['log_P80', 'log_R95']},
+            fit_kwargs={'target_cols': target_log_names},
             model_name='XGBoost'
         )
 
@@ -197,7 +213,7 @@ def main(args):
         lgbm_oof = generate_oof_predictions(
             LGBMModel, {'params': best_lgbm_params},
             X_all, y_all,
-            fit_kwargs={'target_cols': ['log_P80', 'log_R95']},
+            fit_kwargs={'target_cols': target_log_names},
             model_name='LightGBM'
         )
 
@@ -254,7 +270,7 @@ def main(args):
         }
 
         final_log_preds = ensemble.predict(test_preds)
-        final_preds = inverse_transform_targets(final_log_preds)  # [n, 2]
+        final_preds = inverse_transform_targets(final_log_preds)  # [n, 6]
 
         # Evaluate on validation set
         val_preds_log = ensemble.predict({
@@ -262,21 +278,23 @@ def main(args):
             'lgbm': lgbm_final.predict(X_val),
             'pinn': pinn_final.predict(X_val),
         })
-        val_metrics = evaluate_predictions(y_val, val_preds_log,
-                                            target_names=['P80', 'R95'])
-        mlflow.log_metrics({
-            'val_rmse_P80': val_metrics['P80']['RMSE'],
-            'val_r2_P80':   val_metrics['P80']['R2'],
-            'val_rmse_R95': val_metrics['R95']['RMSE'],
-            'val_r2_R95':   val_metrics['R95']['R2'],
-        })
+        
+        TARGET_COLS = ['P80', 'R95', 'fines_frac', 'oversize_frac', 'R50_fines', 'R50_oversize']
+        val_metrics = evaluate_predictions(y_val, val_preds_log, target_names=TARGET_COLS)
+        
+        # Dynamically log all 6 target metrics to MLflow
+        metrics_to_log = {}
+        for t in TARGET_COLS:
+            metrics_to_log[f'val_rmse_{t}'] = val_metrics[t]['RMSE']
+            metrics_to_log[f'val_r2_{t}'] = val_metrics[t]['R2']
+            metrics_to_log[f'val_mae_{t}'] = val_metrics[t]['MAE']
+        mlflow.log_metrics(metrics_to_log)
 
-        # Generate Task 1 submission
-        submission = pd.DataFrame({
-            'id': range(len(final_preds)),
-            'P80': final_preds[:, 0],
-            'R95': final_preds[:, 1],
-        })
+        # Generate Task 1 submission with all 6 columns
+        submission = pd.DataFrame({'id': test_df['id']})
+        for i, col in enumerate(TARGET_COLS):
+            submission[col] = final_preds[:, i]
+            
         sub_path = os.path.join(args.output_dir, 'task1_submission.csv')
         submission.to_csv(sub_path, index=False)
         print(f"\nTask 1 submission saved -> {sub_path}")
@@ -313,7 +331,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Boom Challenge Training Pipeline')
     parser.add_argument('--data_dir', type=str, default='data/',
-                        help='Directory containing train.csv and test.csv')
+                        help='Directory containing train.csv, train_labels.csv, and test.csv')
     parser.add_argument('--output_dir', type=str, default='outputs/',
                         help='Directory for outputs, models, and submissions')
     parser.add_argument('--run_hpo', action='store_true',
