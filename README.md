@@ -59,20 +59,19 @@ boom_challenge/
 | `mu_crater` | (KE/Y)^(1/3) × (ρ_i/ρ_t)^(1/3) | Cratering efficiency |
 | `E_spec` | KE / (ρ_t × d³) | Specific impact energy |
 
----
 
 ### Model Stack
-
 ```
 ┌─ XGBoost  ─┐ ┌─ LightGBM ─┐ ┌─ PyTorch PINN ─┐
 │ Optuna HPO │ │ Optuna HPO │ │ Physics Loss   │
 └────────────┘ └────────────┘ └────────────────┘
          \              |              /
           ┌─────────────────────────┐
-          │  Ridge Meta-Learner     │
+          │  Ridge Meta-Learner     │  ← trained on OOF
           │  (Stacking Ensemble)    │
           └─────────────────────────┘
 ```
+
 
 ### Inverse Design (Task 2)
 
