@@ -60,17 +60,15 @@ boom_challenge/
 | `E_spec` | KE / (ρ_t × d³) | Specific impact energy |
 
 
-### Model Stack
-```
-┌─ XGBoost  ─┐ ┌─ LightGBM ─┐ ┌─ PyTorch PINN ─┐
-│ Optuna HPO │ │ Optuna HPO │ │ Physics Loss   │
-└────────────┘ └────────────┘ └────────────────┘
-         \              |              /
-          ┌─────────────────────────┐
-          │  Ridge Meta-Learner     │  ← trained on OOF
-          │  (Stacking Ensemble)    │
-          └─────────────────────────┘
-```
+Model Stack:
+
+[XGBoost]      [LightGBM]      [PyTorch PINN]
+   |               |               |
+   |---- Optuna HPO ----|---- Physics Loss ----|
+                \        |        /
+                 \       |       /
+              [Ridge Meta-Learner]
+              (Stacking Ensemble - OOF)
 
 
 ### Inverse Design (Task 2)
