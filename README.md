@@ -52,12 +52,12 @@ boom_challenge/
 
 ### Physics-Informed Feature Engineering
 
-| Feature | Formula | Physical Meaning |
-|---|---|---|
-| `pi_v` | v / √(Y/ρ_t) | Shock velocity ratio |
-| `pi_2` | ρ_t × g × d / Y | Gravity-scaling param |
-| `mu_crater` | (KE/Y)^(1/3) × (ρ_i/ρ_t)^(1/3) | Cratering efficiency |
-| `E_spec` | KE / (ρ_t × d³) | Specific impact energy |
+| Feature        | Formula                                  | Physical Meaning            |
+|----------------|------------------------------------------|-----------------------------|
+| `pi_v`         | v / sqrt(Y / rho_t)                     | Shock velocity ratio        |
+| `pi_2`         | rho_t * g * d / Y                       | Gravity scaling parameter   |
+| `mu_crater`    | (KE / Y)^(1/3) * (rho_i / rho_t)^(1/3)  | Cratering efficiency        |
+| `E_spec`       | KE / (rho_t * d^3)                      | Specific impact energy      |
 
 
 Model Stack:
