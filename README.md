@@ -47,7 +47,7 @@ boom_challenge/
 ├── outputs/
 │   ├── task1_submission.csv
 │   ├── task2_scenarios.csv
-│   ├── models/
+│   ├── plots/
 │   └── eda/
 ├── train.py
 ├── requirements.txt
