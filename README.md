@@ -176,7 +176,7 @@ Open: http://localhost:5000
 
 ## Submission Outputs
 
-# Task 1
+Task 1
 task1_submission.csv
 
 Contains forward prediction results for:
@@ -187,7 +187,7 @@ Contains forward prediction results for:
 - R50_fines
 - R50_oversize
 
-# Task 2
+Task 2
 task2_scenarios.csv
 
 Contains 20 optimized inverse-design asteroid impact scenarios generated using the physics-informed optimization pipeline.
