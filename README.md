@@ -1,6 +1,6 @@
 # 💥 Boom: Trajectory Unknown Challenge
 
-### Physics-Informed Machine Learning for Asteroid Impact Ejecta Prediction
+## Physics-Informed Machine Learning for Asteroid Impact Ejecta Prediction
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org)
@@ -11,31 +11,32 @@
 
 ## 🌌 Problem Overview
 
-An asteroid strikes the surface of a planet in the **Mox-95 stellar system**.
+An asteroid impacts the surface of a planet in the Mox-95 stellar system.
 
-We predict **six critical ejecta characteristics**:
+The objective is to predict six critical ejecta characteristics:
 
-* **P80** — 80th percentile fragment size
-* **R95** — radius containing 95% of ejecta
-* **fines_frac** — fraction of fine particles
-* **oversize_frac** — fraction of large fragments
-* **R50_fines** — median radius of fines
-* **R50_oversize** — median radius of oversize fragments
+- **P80** — 80th percentile fragment size
+- **R95** — Radius containing 95% of ejecta
+- **fines_frac** — Fraction of fine particles
+- **oversize_frac** — Fraction of large fragments
+- **R50_fines** — Median radius of fines
+- **R50_oversize** — Median radius of oversize fragments
 
-This is a dual challenge:
+The challenge consists of:
 
-* **Forward Prediction** → impact parameters → debris outcomes
-* **Inverse Design** → find optimal impact conditions satisfying constraints
+### Task 1 — Forward Prediction
+Predict ejecta characteristics from asteroid impact parameters.
+
+### Task 2 — Inverse Design
+Generate impact scenarios that satisfy specified ejecta constraints.
 
 ---
 
 ## 🏗 Repository Structure
 
-```
+```text
 boom_challenge/
 ├── data/
-│   ├── train.csv
-│   └── test.csv
 ├── src/
 │   ├── feature_engineering.py
 │   ├── ensemble.py
@@ -45,10 +46,6 @@ boom_challenge/
 │       ├── pinn_model.py
 │       └── gbm_models.py
 ├── outputs/
-│   ├── task1_submission.csv
-│   ├── task2_scenarios.csv
-│   ├── plots/
-│   └── eda/
 ├── train.py
 ├── requirements.txt
 └── README.md
@@ -56,77 +53,104 @@ boom_challenge/
 
 ---
 
-## 🧪 Key Technical Approach
+## ⚙️ Physics-Informed Feature Engineering
 
-### ⚙️ Physics-Informed Feature Engineering
+The solution incorporates physically meaningful features derived from impact mechanics and crater-scaling relationships.
 
-We derive dimensionless **Buckingham π groups**:
+### Example Derived Features
 
-| Feature     | Formula                        | Meaning              |
-| ----------- | ------------------------------ | -------------------- |
-| `pi_v`      | v / √(Y/ρ_t)                   | Shock velocity ratio |
-| `pi_2`      | ρ_t × g × d / Y                | Gravity scaling      |
-| `mu_crater` | (KE/Y)^(1/3) × (ρ_i/ρ_t)^(1/3) | Crater efficiency    |
-| `E_spec`    | KE / (ρ_t × d³)                | Specific energy      |
+| Feature | Description |
+|----------|-------------|
+| pi_v | Shock velocity ratio |
+| pi_2 | Gravity scaling parameter |
+| mu_crater | Crater efficiency estimate |
+| E_spec | Specific impact energy |
+
+These engineered variables help encode domain knowledge directly into the learning process.
 
 ---
 
-### 🤖 Model Architecture
+## 🤖 Model Architecture
 
+The solution uses a three-model ensemble architecture.
+
+### Base Models
+
+#### XGBoost
+Primary gradient boosting learner optimized using Optuna.
+
+#### LightGBM
+Complementary boosting model for improved generalization.
+
+#### Physics-Informed Neural Network (PINN)
+Neural network trained with additional physics-based constraints to encourage physically consistent predictions.
+
+---
+
+### Hyperparameter Optimization
+
+Optuna is used for automated hyperparameter search and model tuning.
+
+---
+
+### Ensemble Strategy
+
+Predictions from individual models are combined using a validation-driven weighted ensemble.
+
+```text
+Final Prediction
+= (0.60 × XGBoost)
++ (0.30 × LightGBM)
++ (0.10 × PINN)
 ```
-Our pipeline employs a **Three-Tier Elite Stacking Ensemble**:
 
-1.  **Base Layer (Diverse Learners):**
-    * **XGBoost:** Gradient boosting optimized via Optuna (Primary Learner).
-    * **LightGBM:** Fast gradient boosting optimized for broad target coverage.
-    * **PyTorch PINN:** A Physics-Informed Neural Network enforcing energy-consistency laws.
-2.  **Optimization Layer:**
-    * **Optuna HPO:** Automated Bayesian search for optimal hyperparameters.
-3.  **Meta Layer (Hardcoded Elite Blend):**
-    * Instead of a variable meta-learner, we utilize a mathematically derived optimal weighted blend:
-    * `Final = (0.60 * XGB) + (0.30 * LGBM) + (0.10 * PINN)`
-```
+The ensemble weights were selected based on validation performance and leaderboard-oriented optimization.
 
-* XGBoost → primary learner
-* LightGBM → complementary patterns
-* PINN → physics constraints
-* Ridge → stacking ensemble
+> Note:
+> This implementation uses weighted blending rather than a traditional stacked meta-learner.
 
 ---
 
-### 🧠 Inverse Design Engine
+## 🧠 Inverse Design Engine
 
-High-throughput optimization:
+The inverse-design pipeline searches for asteroid impact configurations satisfying target constraints.
 
-* 🔹 500,000 Monte Carlo samples
-* 🔹 Constraint filtering (P80, R95 bounds)
-* 🔹 Diversity selection via clustering
-* 🔹 Energy minimization for optimal solutions
+Key components:
 
----
-
-## 🏆 Competition Strategy
-
-* Optimized for official weighted scoring
-* Strong focus on:
-
-  * **P80 (30%)**
-  * **R95 (20%)**
-* Specialized handling for:
-
-  * Fractional outputs
-  * Distribution-based targets
-* Achieves:
-
-  * **20/20 valid inverse design solutions**
-  * **Low-impact energy optimization**
-  * **High diversity across scenarios**
+- Large-scale Monte Carlo candidate generation
+- Constraint-based filtering
+- Diversity-aware candidate selection
+- Energy minimization strategy
+- Scenario ranking
 
 ---
 
-## 🚀 Quick Start
+## 📊 Performance Metrics
 
-### 🔧 Installation
+| Target | R² Score | MAE |
+|----------|----------|----------|
+| P80 | 0.975 | 7.93 |
+| R95 | 0.920 | 39.60 |
+| fines_frac | 0.946 | 0.007 |
+| oversize_frac | 0.990 | 0.026 |
+| R50_fines | 0.898 | 50.03 |
+| R50_oversize | 0.857 | 23.18 |
+
+---
+
+## 🏆 Competition Highlights
+
+- Physics-informed ML workflow
+- Ensemble learning architecture
+- Automated hyperparameter optimization
+- MLflow experiment tracking
+- Forward prediction pipeline
+- Inverse-design optimization engine
+- Reproducible training setup
+
+---
+
+## 🚀 Installation
 
 ```bash
 git clone https://github.com/veerakarthick235/boom-challenge-ai.git
@@ -136,50 +160,48 @@ pip install -r requirements.txt
 
 ---
 
-### 🏋️ Training
+## 🏋️ Training
 
 ```bash
-# Basic training
 python train.py --data_dir data/ --output_dir outputs/
-
-# With hyperparameter tuning
-python train.py --data_dir data/ --output_dir outputs/ --run_hpo
-
-# Full pipeline (Task 1 + Task 2)
-python train.py --data_dir data/ --output_dir outputs/ --run_hpo --run_task2
 ```
 
----
-
-### 📊 MLflow Tracking
+Hyperparameter optimization:
 
 ```bash
-python -m mlflow ui --backend-store-uri sqlite:///mlflow.db
+python train.py --run_hpo
 ```
 
-Open: http://localhost:5000
+Full pipeline:
+
+```bash
+python train.py --run_hpo --run_task2
+```
 
 ---
 
-## 📊 Performance Metrics
+## 📈 MLflow Tracking
 
-| Target        | R² Score  | MAE   | MAPE   |
-| ------------- | --------- | ----- | ------ |
-| **P80**       | **0.975** | 7.93  | 4.60%  |
-| **R95**       | **0.920** | 39.60 | 17.15% |
-| fines_frac    | 0.946     | 0.007 | 20.9%  |
-| oversize_frac | 0.990     | 0.026 | 21.3%  |
-| R50_fines     | 0.898     | 50.03 | 17.0%  |
-| R50_oversize  | 0.857     | 23.18 | 18.9%  |
+```bash
+python -m mlflow ui
+```
+
+Launch dashboard:
+
+```text
+http://localhost:5000
+```
 
 ---
 
-## Submission Outputs
+## 📂 Outputs
 
-## Task 1
-task1_submission.csv
+### Task 1
 
-Contains forward prediction results for:
+`task1_submission.csv`
+
+Contains predictions for:
+
 - P80
 - R95
 - fines_frac
@@ -187,47 +209,40 @@ Contains forward prediction results for:
 - R50_fines
 - R50_oversize
 
-## Task 2
-task2_scenarios.csv
+### Task 2
 
-Contains 20 optimized inverse-design asteroid impact scenarios generated using the physics-informed optimization pipeline.
+`task2_scenarios.csv`
 
----
-
-## ⭐ Key Highlights
-
-* Physics-informed ML pipeline
-* Advanced stacking ensemble
-* Optuna hyperparameter tuning
-* MLflow experiment tracking
-* High-performance inverse design
-* Competition-optimized solution
+Contains optimized inverse-design impact scenarios.
 
 ---
 
-## 🛡 Reproducibility
+## 🔁 Reproducibility
 
 ```python
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
 ```
 
 ---
 
 ## 📚 References
 
-* Housen & Holsapple (2011) — Impact ejecta scaling
-* Grady & Kipp (1980) — Fragmentation theory
-* Raissi et al. (2019) — Physics-Informed Neural Networks
+- Housen & Holsapple (2011) – Impact ejecta scaling
+- Grady & Kipp (1980) – Fragmentation theory
+- Raissi et al. (2019) – Physics-Informed Neural Networks
 
 ---
 
 ## 🚀 Final Note
 
-Built for **Boom: Trajectory Unknown Challenge**
-Focused on **physics + ML + optimization synergy**
+Built for the Boom: Trajectory Unknown Challenge.
 
-👉 Designed for **top leaderboard performance**
+This project combines:
+- Physics-informed learning
+- Ensemble modeling
+- Optimization-driven inverse design
+
+to create a robust asteroid impact prediction framework.
